@@ -1,0 +1,14 @@
+# go
+bin/
+*.exe
+*.test
+*.out
+coverage.out
+
+# env
+.env
+.env.local
+
+# editors
+.vscode/
+.idea/
