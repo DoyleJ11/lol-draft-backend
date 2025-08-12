@@ -2,27 +2,9 @@ package engine
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 )
-
-func newEmptyState() State {
-    return State{
-        Picks:  map[Team][]int{TeamBlue: {}, TeamRed: {}},
-        Bans:  map[Team][]int{TeamBlue: {}, TeamRed: {}},
-        Rules: Rules{},
-        Fearless: map[int]bool{},
-        Hover: map[string]int{},
-    }
-}
-
-func containsEvent(events []Event, eventType EventType) bool {
-    for _, event := range(events) {
-        if event.Type == eventType {
-            return true
-        }
-    }
-    return false
-}
 
 func TestDuplicatePickIsRejected(t *testing.T) {
     cases := []struct{
@@ -180,14 +162,154 @@ func TestRejectsDuplicatePickSameTeam(t *testing.T) {
 }
 
 func TestApply_EmitsGameCompletedOnLastStep(t *testing.T) {
-    s := newEmptyState()
+    s := NewEmptyState()
     s.Cursor = len(GameOrder) - 1
     cmd := Command{Type: CmdLockPick, Team: GameOrder[s.Cursor].Team, ChampionID: 99}
 
     events, _, err := Apply(s, cmd)
     if err != nil { t.Fatalf("unexpected err %v", err) }
 
-    if !containsEvent(events, EvtGameCompleted) {
+    if !ContainsEvent(events, EvtGameCompleted) {
         t.Fatalf("expected EvtGameCompleted")
+    }
+}
+
+func TestBan_RejectsDuplicateBan(t *testing.T) {
+    s := NewEmptyState()
+    s.Cursor = 5
+    s.Bans = map[Team][]int{TeamBlue: {1, 2, 3}, TeamRed: {4, 5}}
+    cmd := Command{Type: CmdBanChampion, Team: GameOrder[s.Cursor].Team, ChampionID: 3}
+
+    _, _, err := Apply(s, cmd)
+    if !errors.Is(err, ErrIllegalBan) {
+        t.Fatalf("want ErrIllegalBan, didn't get err")
+    }
+}
+
+func TestBan_RejectsBanOfAlreadyPickedChampion(t *testing.T) {
+    s := NewEmptyState()
+    s.Cursor = 12
+    s.Bans = map[Team][]int{TeamBlue: {1, 2, 3}, TeamRed: {4, 5, 41}}
+    s.Picks = map[Team][]int{TeamBlue: {6, 7, 8}, TeamRed: {9, 10, 11}}
+    cmd := Command{Type: CmdBanChampion, Team: GameOrder[s.Cursor].Team, ChampionID: 7}
+
+    _, _, err := Apply(s, cmd)
+    if !errors.Is(err, ErrIllegalBan) {
+        t.Fatalf("want ErrIllegalBan, didn't get err")
+    }
+}
+
+func TestBan_AcceptsLegalBan(t *testing.T) {
+    s := NewEmptyState()
+    s.Cursor = 5
+    s.Bans = map[Team][]int{TeamBlue: {1, 2, 3}, TeamRed: {4, 5}}
+    cmd := Command{Type: CmdBanChampion, Team: GameOrder[s.Cursor].Team, ChampionID: 7}
+
+    _, _, err := Apply(s, cmd)
+    if err != nil {
+        t.Fatalf("unexpected err, %v", err)
+    }
+}
+
+func TestTurnOrder_RejectsOutOfOrderBan(t *testing.T) {
+    s := NewEmptyState()
+    s.Cursor = 5
+    cmd := Command{Type: CmdBanChampion, Team: TeamBlue, ChampionID: 3}
+
+     _, _, err := Apply(s, cmd)
+    if err == nil || !errors.Is(err, ErrWrongTurn) {
+        t.Fatalf("want ErrWrongTurn, got %v", err)
+    }
+}
+
+func TestApply_BanEmitsTurnAdvanced(t *testing.T) {
+    s := NewEmptyState()
+    s.Cursor = 5
+    cmd := Command{Type: CmdBanChampion, Team: GameOrder[s.Cursor].Team, ChampionID: 3}
+
+    events, _, err := Apply(s, cmd)
+    if err != nil { t.Fatalf("unexpected err %v", err) }
+
+    if !ContainsEvent(events, EvtChampionBanned) || !ContainsEvent(events, EvtTurnAdvanced) {
+        t.Fatalf("expected EvtChampionBanned & EvtTurnAdvanced")
+    }
+}
+
+func TestReduce_RebuildsPicksBansAndCursor(t *testing.T) {
+    events := []Event{
+        {
+            Type: EvtChampionBanned,
+            Team: TeamBlue,
+            ChampionID: 1,
+        },
+        {
+            Type: EvtTurnAdvanced,
+        },
+        {
+            Type: EvtChampionBanned,
+            Team: TeamRed,
+            ChampionID: 2,
+        },
+        {
+            Type: EvtTurnAdvanced,
+        },
+        {
+            Type: EvtChampionPicked,
+            Team: TeamBlue,
+            ChampionID: 3,
+        },
+        {
+            Type: EvtTurnAdvanced,
+        },
+        {
+            Type: EvtChampionPicked,
+            Team: TeamRed,
+            ChampionID: 4,
+        },
+        {
+            Type: EvtTurnAdvanced,
+        },
+        {
+            Type: EvtChampionPicked,
+            Team: TeamRed,
+            ChampionID: 5,
+        },
+        {
+            Type: EvtTurnAdvanced,
+        },
+    }
+
+    want := NewEmptyState()
+    want.Bans  = map[Team][]int{TeamBlue: {1}, TeamRed: {2}}
+    want.Picks = map[Team][]int{TeamBlue: {3}, TeamRed: {4, 5}}
+    want.Cursor = 5
+    want.Phase = PhaseBan1
+
+    got := Reduce(events)
+
+    if !reflect.DeepEqual(got, want) {
+        t.Fatalf("state mismatch.\n got: %#v\nwant: %#v", got, want)
+    }
+}
+
+func TestDerivePhase_FromCursorRanges(t *testing.T) {
+    cases := []struct{
+        name string
+        cursor int
+        wantPhase Phase
+    }{
+        { name: "Pick Phase 1", cursor: 7, wantPhase: PhasePick1 }, 
+        { name: "Ban Phase 1", cursor: 3, wantPhase: PhaseBan1 },  
+        { name: "Ban Phase 2", cursor: 14, wantPhase: PhaseBan2 },
+        { name: "Pick Phase 2", cursor: 18, wantPhase: PhasePick2 },
+    }
+
+        for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+          phase := DerivePhase(tc.cursor)
+          if phase != tc.wantPhase {
+            t.Fatalf("Wanted %v, got %v", tc.wantPhase, phase)
+          }
+        })
     }
 }

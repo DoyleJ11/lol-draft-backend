@@ -7,6 +7,7 @@ import (
 
 var ErrWrongTurn = errors.New("invalid turn")
 var ErrIllegalPick = errors.New("illegal champion")
+var ErrIllegalBan = errors.New("illegal ban")
 var ErrUnsupportedCommand = errors.New("unsupported command")
 var ErrGameAlreadyCompleted = errors.New("game already completed")
 
@@ -133,13 +134,47 @@ func Apply(s State, cmd Command) ([]Event, State, error) {
 		}
 		return events, newState, nil
 
+	case CmdBanChampion:
+		if step.Team != cmd.Team || step.Action != ActionBan {
+			return nil, s, ErrWrongTurn
+		}
+
+		// Legality
+		if !canBan(s, cmd.ChampionID) {
+			return nil, s, ErrIllegalBan
+		}
+
+		events := []Event{
+			{Type: EvtChampionBanned, Team: step.Team, ChampionID: cmd.ChampionID},
+			{Type: EvtTurnAdvanced},
+		}
+
+		// Mutate new state for convenience
+		newState.Bans[cmd.Team] = append(newState.Bans[cmd.Team], cmd.ChampionID)
+		return events, newState, nil
 	default:
 		return nil, s, ErrUnsupportedCommand
 	}
 }
 
 func Reduce(events []Event) State {
-	return State{}
+	s := NewEmptyState()
+	s.Cursor = 0
+	for _, event := range(events) {
+		switch event.Type {
+		case EvtChampionPicked:
+			s.Picks[event.Team] = append(s.Picks[event.Team], event.ChampionID)
+		case EvtChampionBanned:
+			s.Bans[event.Team] = append(s.Bans[event.Team], event.ChampionID)
+		case EvtTurnAdvanced:
+			s.Cursor++
+		case EvtGameCompleted:
+			s.Phase = PhaseDone
+		}
+	}
+
+	s.Phase = DerivePhase(s.Cursor)
+	return s
 }
 
 func hasPick(s State, id int) bool {
@@ -159,6 +194,19 @@ func canPick(s State, team Team, id int) bool {
 	if s.Rules.Fearless && s.Fearless[id] {
 		return false
 	}
+
+	return true
+}
+
+func hasBan(s State, id int) bool {
+	exists := slices.Contains(s.Bans[TeamBlue], id) || slices.Contains(s.Bans[TeamRed], id)
+	return exists
+}
+
+func canBan(s State, id int) bool {
+	if s.Fearless[id] { return false }
+	if hasBan(s, id) { return false }
+	if hasPick(s, id) { return false }
 
 	return true
 }
