@@ -1,22 +1,22 @@
 package engine
 
 func NewEmptyState() State {
-    return State{
-        Picks:  map[Team][]int{TeamBlue: {}, TeamRed: {}},
-        Bans:  map[Team][]int{TeamBlue: {}, TeamRed: {}},
-        Rules: Rules{},
-        Fearless: map[int]bool{},
-        Hover: map[string]int{},
-    }
+	return State{
+		Picks:    map[Team][]int{TeamBlue: {}, TeamRed: {}},
+		Bans:     map[Team][]int{TeamBlue: {}, TeamRed: {}},
+		Rules:    Rules{},
+		Fearless: map[int]bool{},
+		Hover:    map[string]int{},
+	}
 }
 
 func ContainsEvent(events []Event, eventType EventType) bool {
-    for _, event := range(events) {
-        if event.Type == eventType {
-            return true
-        }
-    }
-    return false
+	for _, event := range events {
+		if event.Type == eventType {
+			return true
+		}
+	}
+	return false
 }
 
 func DerivePhase(cursor int) Phase {
@@ -31,4 +31,9 @@ func DerivePhase(cursor int) Phase {
 	} else {
 		return PhasePick2
 	}
+}
+
+var chooseRandomLegal = func(s State, team Team) (int, bool) {
+	// real impl later; for tests, you’ll stub this.
+	return 0, false
 }
