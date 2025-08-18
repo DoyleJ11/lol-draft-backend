@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/DoyleJ11/lol-draft-backend/internal/engine"
+	"github.com/DoyleJ11/lol-draft-backend/internal/types"
 )
 
 // helper: receive one snapshot with a timeout so tests never hang
-func recvSnapshot(t *testing.T, ch <-chan Snapshot, within time.Duration) Snapshot {
+func recvSnapshot(t *testing.T, ch <-chan types.ServerMessage, within time.Duration) types.ServerMessage {
 	t.Helper()
 	select {
 	case snap, ok := <-ch:
@@ -19,11 +20,11 @@ func recvSnapshot(t *testing.T, ch <-chan Snapshot, within time.Duration) Snapsh
 		return snap
 	case <-time.After(within):
 		t.Fatalf("timed out waiting for snapshot")
-		return Snapshot{} // unreachable
+		return types.ServerMessage{} // unreachable
 	}
 }
 
-func recvNoSnapshot(t *testing.T, ch <-chan Snapshot, within time.Duration) {
+func recvNoSnapshot(t *testing.T, ch <-chan types.ServerMessage, within time.Duration) {
 	t.Helper()
 	select {
 	case s, ok := <-ch:
@@ -60,7 +61,7 @@ func TestLobby_Pick_BroadcastsSnapshotAndVersionIncrements(t *testing.T) {
 	l := NewLobby(ctx, init)
 
 	// 3) create a client "connection": an outbox channel the lobby will write snapshots to
-	clientOut := make(chan Snapshot, 2) // small buffer so broadcast doesn’t block
+	clientOut := make(chan types.ServerMessage, 2) // small buffer so broadcast doesn’t block
 	l.Inbox() <- Join{ClientID: "ch1", Outbox: clientOut}
 
 	// 4) on join, lobby should immediately send the current snapshot (version 0, no picks)
@@ -99,7 +100,7 @@ func TestLobby_DropSlowClient(t *testing.T) {
 
 	l := NewLobby(ctx, init)
 
-	clientOut := make(chan Snapshot, 1)
+	clientOut := make(chan types.ServerMessage, 1)
 	l.Inbox() <- Join{ClientID: "ch1", Outbox: clientOut}
 
 	cmd := engine.Command{Type: engine.CmdLockPick, Team: engine.TeamBlue, ChampionID: 266}
@@ -125,7 +126,7 @@ func TestLobby_TimerFires_TimeoutAdvanceEmitsSnapshot(t *testing.T) {
 
 	l := NewLobby(ctx, init)
 
-	clientOut := make(chan Snapshot, 1)
+	clientOut := make(chan types.ServerMessage, 1)
 	l.Inbox() <- Join{ClientID: "ch1", Outbox: clientOut}
 	first := recvSnapshot(t, clientOut, 100*time.Millisecond)
 	if first.Version != 0 {
@@ -154,7 +155,7 @@ func TestLobby_TimerGen_DropsStaleFires(t *testing.T) {
 
 	l := NewLobby(ctx, init)
 
-	out := make(chan Snapshot, 4)
+	out := make(chan types.ServerMessage, 4)
 	l.Inbox() <- Join{ClientID: "ch1", Outbox: out}
 
 	_ = recvSnapshot(t, out, 100*time.Millisecond) // version 0
@@ -205,7 +206,7 @@ func TestLobby_Shutdown_StopsTimer_NoFire(t *testing.T) {
 
 	l := NewLobby(ctx, init)
 
-	out := make(chan Snapshot, 2)
+	out := make(chan types.ServerMessage, 2)
 	l.Inbox() <- Join{ClientID: "c1", Outbox: out}
 	_ = recvSnapshot(t, out, 500*time.Millisecond) // drain join snapshot
 

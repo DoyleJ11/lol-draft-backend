@@ -32,14 +32,14 @@ func Handler(h *hub.Hub) http.HandlerFunc {
 
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			// In dev ONLY, you can loosen origin checks:
-			// OriginPatterns: []string{"http://localhost:*", "http://127.0.0.1:*"},
+			OriginPatterns: []string{"http://localhost:*", "http://127.0.0.1:*"},
 		})
 		if err != nil {
 			return
 		}
 		defer conn.Close(websocket.StatusNormalClosure, "bye")
 
-		out := make(chan lobby.Snapshot, 8)
+		out := make(chan types.ServerMessage, 8)
 		clientID := randID(6) // Implement simple rand id
 
 		lb.Inbox() <- lobby.Join{ClientID: clientID, Outbox: out}
@@ -49,9 +49,8 @@ func Handler(h *hub.Hub) http.HandlerFunc {
 		writeCtx, writeCancel := context.WithCancel(r.Context())
 		defer writeCancel()
 		go func() {
-			for snap := range out {
-				msg := types.ServerMessage{Type: "StateSnapshot", Version: snap.Version, State: &snap.State}
-				payload, _ := json.Marshal(msg)
+			for m := range out {
+				payload, _ := json.Marshal(m) // already ServerMessage
 				ctx, cancel := context.WithTimeout(writeCtx, 3*time.Second)
 				_ = conn.Write(ctx, websocket.MessageText, payload)
 				cancel()
@@ -86,7 +85,7 @@ func Handler(h *hub.Hub) http.HandlerFunc {
 				continue
 			}
 
-			lb.Inbox() <- lobby.FromClient{Cmd: cmd}
+			lb.Inbox() <- lobby.FromClient{ClientID: clientID, Cmd: cmd}
 		}
 	}
 }

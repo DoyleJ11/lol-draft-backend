@@ -1,13 +1,16 @@
 package engine
 
 func NewEmptyState() State {
-	return State{
+	s := State{
 		Picks:    map[Team][]int{TeamBlue: {}, TeamRed: {}},
 		Bans:     map[Team][]int{TeamBlue: {}, TeamRed: {}},
-		Rules:    Rules{},
 		Fearless: map[int]bool{},
 		Hover:    map[string]int{},
+		Rules:    Rules{PickTimerSec: 25, BanTimerSec: 25},
+		Cursor:   0,
 	}
+	s.Phase = DerivePhase(s.Cursor) // Ensure "ban1" shows up on join
+	return s
 }
 
 func ContainsEvent(events []Event, eventType EventType) bool {

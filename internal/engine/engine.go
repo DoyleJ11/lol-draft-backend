@@ -158,7 +158,7 @@ func Apply(s State, cmd Command) ([]Event, State, error) {
 		return events, newState, nil
 
 	case CmdHoverChampion:
-		if step.Team != cmd.Team || step.Action != ActionPick {
+		if step.Team != cmd.Team {
 			return nil, s, ErrWrongTurn
 		}
 
