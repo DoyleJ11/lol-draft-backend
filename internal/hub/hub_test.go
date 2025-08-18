@@ -24,3 +24,39 @@ func TestHub_Create_Get_SamePointer(t *testing.T) {
 		t.Fatalf("expected same lobby pointer")
 	}
 }
+
+func TestHub_EnsureIdempotent(t *testing.T) {
+	ctx := context.Background()
+	h := NewHub(ctx)
+	reply := make(chan *lobby.Lobby, 1)
+
+	state := engine.NewEmptyState()
+	h.Inbox() <- EnsureLobby{Code: "ABC123", State: state, Reply: reply}
+	lb1 := <-reply
+
+	h.Inbox() <- EnsureLobby{Code: "ABC123", State: state, Reply: reply}
+	lb2 := <-reply
+
+	if lb1 == nil || lb2 == nil || lb1 != lb2 {
+		t.Fatalf("expected same lobby pointer")
+	}
+}
+
+func TestHub_Create_Remove_CheckGetNil(t *testing.T) {
+	ctx := context.Background()
+	h := NewHub(ctx)
+	reply := make(chan *lobby.Lobby, 1)
+
+	state := engine.NewEmptyState()
+	h.Inbox() <- CreateLobby{Code: "ZED123", State: state, Reply: reply}
+	lb1 := <-reply
+
+	h.Inbox() <- RemoveLobby{Code: "ZED123"}
+
+	h.Inbox() <- GetLobby{Code: "ZED123", Reply: reply}
+	lb1 = <-reply
+
+	if lb1 != nil {
+		t.Fatalf("expected no lobby found")
+	}
+}
